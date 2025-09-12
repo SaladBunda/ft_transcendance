@@ -1,11 +1,23 @@
+# Use official Node.js image
 FROM node:18
 
+# Set working dir
 WORKDIR /app
 
-COPY backend/package*.json ./
+# Copy package files first (for caching)
+COPY package*.json ./
+
+# Install dependencies
 RUN npm install
 
-COPY backend/ ./
+# Copy rest of the backend source
+COPY . .
 
+# Build TypeScript
+RUN npx tsc
+
+# Expose Fastify port
 EXPOSE 3001
-CMD ["npx", "ts-node", "server.ts"]
+
+# Start server directly
+CMD ["node", "dist/server.js"]

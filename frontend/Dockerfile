@@ -1,23 +1,15 @@
-# Use the official Node.js image
 FROM node:18
 
-# Set the working directory inside the container
 WORKDIR /app
 
-# Initialize a new package.json file
-RUN npm init -y
+COPY package*.json ./
 
-# Install Next.js, React, and React DOM
-RUN npm install next react react-dom
+RUN npm install
 
-# Install TypeScript and type definitions for React
-RUN npm install --save-dev typescript @types/react @types/react-dom
-
-# Copy the application code into the container
 COPY . .
 
-# Expose the port used by Next.js
+# Expose frontend port
 EXPOSE 3000
 
-# Start the Next.js development server
+# Start Next.js in dev mode
 CMD ["npm", "run", "dev"]
