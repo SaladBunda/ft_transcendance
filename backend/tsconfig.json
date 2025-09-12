@@ -6,5 +6,5 @@
 	  "strict": true,             // Enable strict type checking
 	  "esModuleInterop": true // Add this line
 	},
-	"include": ["server.ts"]     // Files to compile
+	"include": ["server1.ts"]     // Files to compile
 }

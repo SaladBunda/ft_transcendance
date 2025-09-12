@@ -14,10 +14,11 @@ RUN npm install
 COPY . .
 
 # Build TypeScript
-RUN npx tsc
+# RUN npx tsc
 
 # Expose Fastify port
 EXPOSE 3001
 
 # Start server directly
-CMD ["node", "dist/server.js"]
+# CMD ["node", "dist/server.js"]
+CMD ["npm", "run", "dev"]

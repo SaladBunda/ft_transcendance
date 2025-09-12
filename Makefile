@@ -18,5 +18,5 @@ fclean: clean
 	@echo "Removing all images..."
 	docker rmi -f $$(docker images -q)
 
-re: fclean up
+re: down fclean up
 	@echo "Rebuilt and started services."
