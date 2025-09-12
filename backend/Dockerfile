@@ -21,4 +21,4 @@ EXPOSE 3001
 
 # Start server directly
 # CMD ["node", "dist/server.js"]
-CMD ["npm", "run", "dev"]
+CMD ["node", "server.js"]
