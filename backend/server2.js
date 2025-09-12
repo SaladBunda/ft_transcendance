@@ -1,3 +1,4 @@
+
 const Fastify = require("fastify");
 const fastifyWebsocket = require("@fastify/websocket");
 
@@ -9,25 +10,17 @@ const CANVAS_HEIGHT = 400;
 const PADDLE_WIDTH = 10;
 const PADDLE_HEIGHT = 100;
 const BALL_SIZE = 10;
-const WIN_SCORE = 5;
 
 // Game state
 let gameState = {
   ball: { x: 300, y: 200, dx: 2, dy: 2 },
-  player1: { x: 20, y: 150, dy: 0, score: 0 },  // Left paddle
-  player2: { x: 570, y: 150, dy: 0, score: 0 }, // Right paddle
-  winner: null,
+  player1: { x: 20, y: 150, dy: 0 },
+  player2: { x: 570, y: 150, dy: 0 },
 };
 
 let speedMultiplier = 1;
 
-// Reset ball
-function resetBall() {
-  gameState.ball = { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2, dx: 2, dy: 2 };
-  speedMultiplier = 1;
-}
-
-// Increase speed over time
+// Increase ball speed every second
 setInterval(() => {
   speedMultiplier += 0.05;
 }, 1000);
@@ -42,39 +35,47 @@ fastify.register(async (fastify) => {
       const data = JSON.parse(message.toString());
 
       if (data.type === "update") {
-        // Swap: arrow keys control right paddle, W/S left paddle
         if (typeof data.player1DY === "number") gameState.player1.dy = data.player1DY;
         if (typeof data.player2DY === "number") gameState.player2.dy = data.player2DY;
       }
     });
 
     const interval = setInterval(() => {
-      // Move ball
+      // Ball movement
       gameState.ball.x += gameState.ball.dx * speedMultiplier;
       gameState.ball.y += gameState.ball.dy * speedMultiplier;
 
-      // Move paddles
+      // Paddle movement
       gameState.player1.y += gameState.player1.dy;
       gameState.player2.y += gameState.player2.dy;
 
       // Clamp paddles
-      gameState.player1.y = Math.max(0, Math.min(CANVAS_HEIGHT - PADDLE_HEIGHT, gameState.player1.y));
-      gameState.player2.y = Math.max(0, Math.min(CANVAS_HEIGHT - PADDLE_HEIGHT, gameState.player2.y));
+      if (gameState.player1.y < 0) gameState.player1.y = 0;
+      if (gameState.player1.y + PADDLE_HEIGHT > CANVAS_HEIGHT)
+        gameState.player1.y = CANVAS_HEIGHT - PADDLE_HEIGHT;
+      if (gameState.player2.y < 0) gameState.player2.y = 0;
+      if (gameState.player2.y + PADDLE_HEIGHT > CANVAS_HEIGHT)
+        gameState.player2.y = CANVAS_HEIGHT - PADDLE_HEIGHT;
 
-      // Ball collisions top/bottom
-      if (gameState.ball.y <= 0 || gameState.ball.y + BALL_SIZE >= CANVAS_HEIGHT) {
+      // Ball collisions (top/bottom)
+      if (gameState.ball.y <= 0) {
+        gameState.ball.y = 0;
+        gameState.ball.dy *= -1;
+      }
+      if (gameState.ball.y + BALL_SIZE >= CANVAS_HEIGHT) {
+        gameState.ball.y = CANVAS_HEIGHT - BALL_SIZE;
         gameState.ball.dy *= -1;
       }
 
-      // Ball collisions paddles
+      // Ball collisions (paddles)
       if (
         gameState.ball.x <= gameState.player1.x + PADDLE_WIDTH &&
         gameState.ball.x + BALL_SIZE >= gameState.player1.x &&
         gameState.ball.y + BALL_SIZE >= gameState.player1.y &&
         gameState.ball.y <= gameState.player1.y + PADDLE_HEIGHT
       ) {
-        gameState.ball.dx *= -1;
         gameState.ball.x = gameState.player1.x + PADDLE_WIDTH;
+        gameState.ball.dx *= -1;
       }
 
       if (
@@ -83,27 +84,24 @@ fastify.register(async (fastify) => {
         gameState.ball.y + BALL_SIZE >= gameState.player2.y &&
         gameState.ball.y <= gameState.player2.y + PADDLE_HEIGHT
       ) {
-        gameState.ball.dx *= -1;
         gameState.ball.x = gameState.player2.x - BALL_SIZE;
+        gameState.ball.dx *= -1;
       }
 
-      // Score & check winner
-      if (gameState.ball.x < 0) {
-        gameState.player2.score++;
-        resetBall();
-      }
-      if (gameState.ball.x > CANVAS_WIDTH) {
-        gameState.player1.score++;
-        resetBall();
+      // Reset if out of bounds
+      if (gameState.ball.x < 0 || gameState.ball.x > CANVAS_WIDTH) {
+        gameState.ball = { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2, dx: 2, dy: 2 };
+        speedMultiplier = 1;
       }
 
-      if (gameState.player1.score >= WIN_SCORE) gameState.winner = "Player 1";
-      if (gameState.player2.score >= WIN_SCORE) gameState.winner = "Player 2";
-
+      // Broadcast state
       connection.socket.send(JSON.stringify(gameState));
     }, 16);
 
-    connection.socket.on("close", () => clearInterval(interval));
+    connection.socket.on("close", () => {
+      clearInterval(interval);
+      console.log("Frontend disconnected.");
+    });
   });
 });
 
