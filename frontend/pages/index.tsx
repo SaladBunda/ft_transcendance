@@ -4,11 +4,96 @@ export default function Home() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const [gameState, setGameState] = useState<any>(null);
-  const [screen, setScreen] = useState<"start" | "game" | "end">("start");
+  const [screen, setScreen] = useState<"start" | "waiting" | "game" | "end">("start");
   const [isConnected, setIsConnected] = useState(false);
+  const [playerInfo, setPlayerInfo] = useState<any>(null);
+  const [gameMode, setGameMode] = useState<"solo" | "matchmaking">("matchmaking");
 
-  // Function to establish WebSocket connection
-  const connectWebSocket = () => {
+  // This old function has been replaced by connectWebSocketWithMode
+
+  // Separate render function
+  const renderGame = (state: any) => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!ctx || !canvas) return;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Border
+    ctx.strokeStyle = "white";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(0, 0, canvas.width, canvas.height);
+
+    // Center line
+    ctx.strokeStyle = "gray";
+    ctx.setLineDash([10, 10]);
+    ctx.beginPath();
+    ctx.moveTo(canvas.width / 2, 0);
+    ctx.lineTo(canvas.width / 2, canvas.height);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Paddles + ball
+    ctx.fillStyle = "white";
+    ctx.fillRect(state.player1.x, state.player1.y, 10, 100);
+    ctx.fillRect(state.player2.x, state.player2.y, 10, 100);
+    ctx.fillRect(state.ball.x, state.ball.y, 10, 10);
+
+    // Player role indicators
+    if (playerInfo?.role) {
+      ctx.fillStyle = "yellow";
+      ctx.font = "12px Arial";
+      ctx.textAlign = "left";
+      
+      if (playerInfo.role === 'player1' || playerInfo.role === 'both') {
+        ctx.fillText("YOU", 25, 25);
+      }
+      if (playerInfo.role === 'player2' || playerInfo.role === 'both') {
+        ctx.textAlign = "right";
+        ctx.fillText(playerInfo.role === 'both' ? "YOU" : "YOU", canvas.width - 25, 25);
+      }
+    }
+
+    // Countdown
+    if (state.countdown > 0) {
+      ctx.fillStyle = "yellow";
+      ctx.font = "30px Arial";
+      ctx.textAlign = "center";
+      ctx.fillText(state.countdown.toString(), canvas.width / 2, canvas.height / 2);
+    }
+  };
+
+  // Handle restart
+  const handleRestart = () => {
+    console.log("Restarting game...");
+    
+    if (playerInfo?.gameType === 'solo') {
+      // Solo mode: just reset the game
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "reset" }));
+      }
+      setGameState(null);
+      setScreen("game");
+    } else {
+      // Multiplayer mode: leave game and return to start
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "reset" }));
+      }
+      // The server will send a 'gameLeft' message which will handle the screen change
+    }
+  };
+
+  // Handle start game modes
+  const handleStartSolo = () => {
+    connectWebSocketWithMode('solo');
+  };
+
+  const handleStartMultiplayer = () => {
+    connectWebSocketWithMode('matchmaking');
+  };
+
+  // Connect with specific game mode
+  const connectWebSocketWithMode = (gameMode: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       return; // Already connected
     }
@@ -19,6 +104,8 @@ export default function Home() {
     ws.onopen = () => {
       console.log("WebSocket connected");
       setIsConnected(true);
+      // Send game mode selection
+      ws.send(JSON.stringify({ type: "join", gameMode }));
     };
 
     ws.onclose = () => {
@@ -31,80 +118,51 @@ export default function Home() {
     };
 
     ws.onmessage = (event) => {
-      const state = JSON.parse(event.data);
-      setGameState(state);
+      const message = JSON.parse(event.data);
 
-      // Render the game
-      const canvas = canvasRef.current;
-      const ctx = canvas?.getContext("2d");
-      if (!ctx || !canvas) return;
+      if (message.type === 'waiting') {
+        // Player is waiting for opponent
+        setScreen("waiting");
+        setPlayerInfo(message);
+      } else if (message.type === 'gameJoined') {
+        // Game started
+        setScreen("game");
+        setPlayerInfo(message);
+        setGameState(message.gameState);
+      } else if (message.type === 'gameLeft') {
+        // Player left the game, return to start screen
+        setScreen("start");
+        setPlayerInfo(null);
+        setGameState(null);
+      } else if (message.type === 'playerLeft') {
+        // Opponent left, show message and return to start
+        alert(message.message);
+        setScreen("start");
+        setPlayerInfo(null);
+        setGameState(null);
+      } else {
+        // Regular game state update
+        const state = message;
+        setGameState(state);
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // Render the game
+        renderGame(state);
 
-      // Border
-      ctx.strokeStyle = "white";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(0, 0, canvas.width, canvas.height);
-
-      // Center line
-      ctx.strokeStyle = "gray";
-      ctx.setLineDash([10, 10]);
-      ctx.beginPath();
-      ctx.moveTo(canvas.width / 2, 0);
-      ctx.lineTo(canvas.width / 2, canvas.height);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Paddles + ball
-      ctx.fillStyle = "white";
-      ctx.fillRect(state.player1.x, state.player1.y, 10, 100);
-      ctx.fillRect(state.player2.x, state.player2.y, 10, 100);
-      ctx.fillRect(state.ball.x, state.ball.y, 10, 10);
-
-      // Countdown
-      if (state.countdown > 0) {
-        ctx.fillStyle = "yellow";
-        ctx.font = "30px Arial";
-        ctx.textAlign = "center";
-        ctx.fillText(state.countdown.toString(), canvas.width / 2, canvas.height / 2);
-      }
-
-      // Check for winner and switch to end screen
-      if (state.winner && screen !== "end") {
-        setScreen("end");
+        // Check for winner and switch to end screen
+        if (state.winner && screen !== "end") {
+          setScreen("end");
+        }
       }
     };
   };
 
-  // Handle restart
-  const handleRestart = () => {
-    console.log("Restarting game...");
-    
-    // Send reset message if connected
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "reset" }));
-    }
-    
-    // Reset local state
-    setGameState(null);
-    setScreen("game");
-  };
-
-  // Handle start game
-  const handleStartGame = () => {
-    setScreen("game");
-  };
-
-  // Set up WebSocket connection when screen changes to game
-  useEffect(() => {
-    if (screen === "game") {
-      connectWebSocket();
-    }
-  }, [screen]);
+  // This effect has been replaced by connectWebSocketWithMode
 
   // Set up keyboard controls
   useEffect(() => {
     if (screen !== "game") return;
+    
+    console.log("Setting up controls for player:", playerInfo?.role);
 
     const keysPressed = new Set<string>();
     
@@ -114,10 +172,34 @@ export default function Home() {
       let player1DY = 0;
       let player2DY = 0;
       
-      if (keysPressed.has("ArrowUp")) player2DY -= 5;
-      if (keysPressed.has("ArrowDown")) player2DY += 5;
-      if (keysPressed.has("w") || keysPressed.has("W")) player1DY -= 5;
-      if (keysPressed.has("s") || keysPressed.has("S")) player1DY += 5;
+      // Calculate movement based on keys pressed
+      let myMovement = 0;
+      
+      // Both control schemes work for any player
+      if (keysPressed.has("w") || keysPressed.has("W") || keysPressed.has("ArrowUp")) {
+        myMovement -= 5;
+      }
+      if (keysPressed.has("s") || keysPressed.has("S") || keysPressed.has("ArrowDown")) {
+        myMovement += 5;
+      }
+      
+      // Send movement based on player role
+      if (playerInfo?.role === 'player1') {
+        player1DY = myMovement; // Player 1 controls left paddle
+      } else if (playerInfo?.role === 'player2') {
+        player2DY = myMovement; // Player 2 controls right paddle
+      } else if (playerInfo?.role === 'both') {
+        // Coop mode: Local multiplayer with specific key assignments
+        if (keysPressed.has("w") || keysPressed.has("W")) player1DY -= 5; // Left paddle: WASD
+        if (keysPressed.has("s") || keysPressed.has("S")) player1DY += 5;
+        if (keysPressed.has("ArrowUp")) player2DY -= 5; // Right paddle: Arrows
+        if (keysPressed.has("ArrowDown")) player2DY += 5;
+      }
+      
+      // Debug Player 2 specifically
+      if (playerInfo?.role === 'player2' && (player1DY !== 0 || player2DY !== 0)) {
+        console.log(`🎮 Frontend Player 2 sending: role=${playerInfo?.role}, p1DY=${player1DY}, p2DY=${player2DY}, myMovement=${myMovement}, keys=[${Array.from(keysPressed)}]`);
+      }
       
       wsRef.current.send(JSON.stringify({ type: "update", player1DY, player2DY }));
     };
@@ -141,7 +223,7 @@ export default function Home() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [screen]);
+  }, [screen, playerInfo]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -166,10 +248,62 @@ export default function Home() {
       {screen === "start" && (
         <div>
           <h1>Pong Game</h1>
+          
+          {/* Game Mode Selection */}
+          <div style={{ marginBottom: "20px" }}>
+            <h3>Select Game Mode:</h3>
+            <div style={{ display: "flex", gap: "15px", justifyContent: "center", flexWrap: "wrap" }}>
+              <div style={{ textAlign: "center" }}>
+                <button
+                  onClick={() => setGameMode("matchmaking")}
+                  style={{
+                    padding: "10px 15px",
+                    fontSize: "14px",
+                    backgroundColor: gameMode === "matchmaking" ? "#28a745" : "#6c757d",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "5px",
+                    cursor: "pointer",
+                    display: "block",
+                    marginBottom: "5px"
+                  }}
+                >
+                  🎮 Find Opponent
+                </button>
+                <small style={{ color: "#ccc", fontSize: "12px" }}>
+                  Play online vs another player<br/>
+                  (W/S or ↑/↓ keys work)
+                </small>
+              </div>
+              <div style={{ textAlign: "center" }}>
+                <button
+                  onClick={() => setGameMode("solo")}
+                  style={{
+                    padding: "10px 15px",
+                    fontSize: "14px",
+                    backgroundColor: gameMode === "solo" ? "#28a745" : "#6c757d",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "5px",
+                    cursor: "pointer",
+                    display: "block",
+                    marginBottom: "5px"
+                  }}
+                >
+                  👥 Coop Mode
+                </button>
+                <small style={{ color: "#ccc", fontSize: "12px" }}>
+                  Local 2-player game<br/>
+                  (W/S vs ↑/↓ keys)
+                </small>
+              </div>
+            </div>
+          </div>
+
           <button 
-            onClick={handleStartGame}
+            onClick={gameMode === "matchmaking" ? handleStartMultiplayer : handleStartSolo}
             style={{
-              padding: "10px 20px",
+              padding: "15px 30px",
               fontSize: "18px",
               backgroundColor: "#007bff",
               color: "white",
@@ -178,7 +312,44 @@ export default function Home() {
               cursor: "pointer"
             }}
           >
-            Start Game
+            {gameMode === "matchmaking" ? "🎮 Find Opponent" : "👥 Start Coop"}
+          </button>
+        </div>
+      )}
+
+      {screen === "waiting" && (
+        <div>
+          <h2>🔍 Looking for opponent...</h2>
+          <div style={{ 
+            marginBottom: "20px",
+            padding: "20px",
+            border: "2px dashed #ffc107",
+            borderRadius: "10px"
+          }}>
+            <p>Waiting for another player to join...</p>
+            <div style={{ 
+              width: "50px", 
+              height: "50px", 
+              border: "3px solid #ffc107", 
+              borderTop: "3px solid transparent", 
+              borderRadius: "50%", 
+              animation: "spin 1s linear infinite",
+              margin: "10px auto"
+            }}></div>
+          </div>
+          <button
+            onClick={() => setScreen("start")}
+            style={{
+              padding: "10px 20px",
+              fontSize: "16px",
+              backgroundColor: "#dc3545",
+              color: "white",
+              border: "none",
+              borderRadius: "5px",
+              cursor: "pointer"
+            }}
+          >
+            Cancel
           </button>
         </div>
       )}
@@ -186,9 +357,26 @@ export default function Home() {
       {screen === "game" && (
         <div>
           <div style={{ marginBottom: "10px" }}>
-            <p>Player 1: {gameState?.player1?.score || 0} - Player 2: {gameState?.player2?.score || 0}</p>
-            <p>Connection: {isConnected ? "Connected" : "Disconnected"}</p>
-            <p style={{ fontSize: "12px" }}>Controls: Player 1 (W/S), Player 2 (Arrow Keys)</p>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}>
+              <span>Player 1: {gameState?.player1?.score || 0}</span>
+              <span style={{ 
+                padding: "2px 8px", 
+                backgroundColor: playerInfo?.gameType === 'solo' ? "#ffc107" : "#17a2b8",
+                borderRadius: "12px", 
+                fontSize: "12px" 
+              }}>
+                {playerInfo?.gameType === 'solo' ? "Practice Mode" : `Multiplayer - You are ${playerInfo?.role}`}
+              </span>
+              <span>Player 2: {gameState?.player2?.score || 0}</span>
+            </div>
+            
+            <p>Connection: {isConnected ? "🟢 Connected" : "🔴 Disconnected"}</p>
+            
+            <p style={{ fontSize: "12px" }}>
+              {playerInfo?.role === 'player1' && "Your paddle (Left): W/S or ↑/↓"}
+              {playerInfo?.role === 'player2' && "Your paddle (Right): W/S or ↑/↓"}
+              {playerInfo?.role === 'both' && "Left paddle: W/S | Right paddle: ↑/↓"}
+            </p>
           </div>
           <canvas 
             ref={canvasRef} 
@@ -219,7 +407,15 @@ export default function Home() {
             Play Again
           </button>
           <button
-            onClick={() => setScreen("start")}
+            onClick={() => {
+              setScreen("start");
+              setPlayerInfo(null);
+              setGameState(null);
+              if (wsRef.current) {
+                wsRef.current.close();
+                wsRef.current = null;
+              }
+            }}
             style={{
               padding: "10px 20px",
               fontSize: "18px",
