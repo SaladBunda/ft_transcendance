@@ -40,6 +40,11 @@ class GameLoop {
   updatePaddles() {
     const state = this.gameState.getState();
     
+    // Handle AI movement for Player 2 if in AI mode
+    if (this.gameState.gameMode === 'ai' && this.gameState.ai) {
+      state.player2.dy = this.gameState.ai.getMovement(state);
+    }
+    
     // Paddle movement
     state.player1.y += state.player1.dy;
     state.player2.y += state.player2.dy;

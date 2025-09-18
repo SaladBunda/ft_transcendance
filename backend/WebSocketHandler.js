@@ -43,9 +43,18 @@ class WebSocketHandler {
               const result = this.gameManager.addPlayer(connection.socket, 'matchmaking');
               
               if (result.player1 && result.player2) {
-                // Matched two players
+                // Matched two players - determine which one is the current connection
                 const player1 = result.player1;
                 const player2 = result.player2;
+                
+                // Set connectionId for the current connection
+                if (player1.connection === connection.socket) {
+                  connectionId = player1.connectionId;
+                  playerInfo = player1;
+                } else {
+                  connectionId = player2.connectionId;
+                  playerInfo = player2;
+                }
                 
                 // Send game info to player 1
                 const player1Connection = this.gameManager.getPlayerInfo(player1.connectionId).connection;
@@ -84,11 +93,25 @@ class WebSocketHandler {
                 type: 'gameJoined',
                 ...result
               }));
+            } else if (gameMode === 'ai') {
+              // AI game with difficulty
+              const aiDifficulty = data.aiDifficulty || 'medium';
+              const result = this.gameManager.addPlayer(connection.socket, 'ai', aiDifficulty);
+              connectionId = result.connectionId;
+              playerInfo = result;
+              
+              connection.socket.send(JSON.stringify({
+                type: 'gameJoined',
+                ...result,
+                aiDifficulty
+              }));
             }
           } else if (data.type === "update" || data.type === "reset") {
             // Handle game input
             if (connectionId) {
               this.gameManager.handlePlayerInput(connectionId, data);
+            } else {
+              console.log(`❌ Ignoring input from unconnected player: ${data.type}`);
             }
           }
         });

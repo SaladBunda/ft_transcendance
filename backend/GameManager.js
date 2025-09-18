@@ -21,12 +21,15 @@ class GameManager {
   }
 
   // Add a new player connection
-  addPlayer(connection, gameMode = 'matchmaking') {
+  addPlayer(connection, gameMode = 'matchmaking', aiDifficulty = null) {
     const connectionId = this.generateConnectionId();
     
     if (gameMode === 'solo') {
-      // Create a solo game (AI or practice mode)
-      return this.createSoloGame(connection, connectionId);
+      // Create a solo game (practice mode)
+      return this.createSoloGame(connection, connectionId, 'solo');
+    } else if (gameMode === 'ai') {
+      // Create an AI game
+      return this.createSoloGame(connection, connectionId, 'ai', aiDifficulty);
     } else {
       // Add to matchmaking queue
       return this.addToMatchmaking(connection, connectionId);
@@ -34,13 +37,13 @@ class GameManager {
   }
 
   // Create a solo game for practice
-  createSoloGame(connection, connectionId) {
+  createSoloGame(connection, connectionId, gameType = 'solo', aiDifficulty = null) {
     const roomId = this.generateRoomId();
-    const gameState = new GameState();
+    const gameState = new GameState(gameType, aiDifficulty);
     const gameLoop = new GameLoop(gameState, true); // Pass true for solo mode
     
     const game = {
-      mode: 'solo',
+      mode: gameType || 'solo',
       players: new Set([connectionId]),
       spectators: new Set(),
       gameState,
@@ -165,16 +168,17 @@ class GameManager {
       // Handle movement based on player role and game mode
       const isSolo = gameRoom.mode === 'solo';
       
-      // Debug Player 2 specifically
-      if (player.role === 'player2' || (inputData.player2DY !== 0 && inputData.player2DY !== undefined)) {
-        console.log(`🎮 Player ${connectionId} (${player.role}) input:`, inputData);
-      }
+      // Debug all player inputs
+      console.log(`🎮 GameManager received from ${connectionId} (${player.role}):`, inputData);
       
       if (player.role === 'player1') {
+        console.log(`➡️ Calling updatePlayerMovement for Player 1: p1DY=${inputData.player1DY || 0}`);
         gameRoom.gameState.updatePlayerMovement(inputData.player1DY || 0, null, 'player1', false);
       } else if (player.role === 'player2') {
+        console.log(`➡️ Calling updatePlayerMovement for Player 2: p2DY=${inputData.player2DY || 0}`);
         gameRoom.gameState.updatePlayerMovement(null, inputData.player2DY || 0, 'player2', false);
       } else if (player.role === 'both') {
+        console.log(`➡️ Calling updatePlayerMovement for Solo: p1DY=${inputData.player1DY || 0}, p2DY=${inputData.player2DY || 0}`);
         // Solo mode - handle both players
         gameRoom.gameState.updatePlayerMovement(inputData.player1DY || 0, inputData.player2DY || 0, null, true);
       }

@@ -6,7 +6,7 @@ const PADDLE_HEIGHT = 100;
 const BALL_SIZE = 10;
 
 class GameState {
-  constructor() {
+  constructor(gameMode = 'multiplayer', aiDifficulty = null) {
     this.gameState = {
       ball: { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2, dx: 0, dy: 0 },
       player1: { x: 20, y: (CANVAS_HEIGHT - PADDLE_HEIGHT) / 2, dy: 0, score: 0 },
@@ -16,10 +16,19 @@ class GameState {
       gameActive: false,
     };
     
-    this.baseSpeed = 2;
+    this.baseSpeed = 1.5;
     this.movementSpeed = 0;
     this.lastSpeedIncrease = Date.now();
     this.countdownInterval = null;
+    this.gameMode = gameMode;
+    this.aiDifficulty = aiDifficulty;
+    
+    // Initialize AI if needed
+    if (gameMode === 'ai' && aiDifficulty) {
+      const AIPlayer = require('./AIPlayer');
+      this.ai = new AIPlayer(aiDifficulty);
+      console.log(`🤖 AI initialized with difficulty: ${aiDifficulty}`);
+    }
   }
 
   // Get current game state
@@ -96,7 +105,7 @@ class GameState {
         this.gameState.ball.dy = dy;
         this.gameState.gameActive = true;
         
-        if (loser) this.baseSpeed += 0.3; // Only increase speed on actual scoring, not restart
+        if (loser) this.baseSpeed += 0.2; // Only increase speed on actual scoring, not restart
         this.movementSpeed = 0;
         this.lastSpeedIncrease = Date.now();
         

@@ -7,7 +7,8 @@ export default function Home() {
   const [screen, setScreen] = useState<"start" | "waiting" | "game" | "end">("start");
   const [isConnected, setIsConnected] = useState(false);
   const [playerInfo, setPlayerInfo] = useState<any>(null);
-  const [gameMode, setGameMode] = useState<"solo" | "matchmaking">("matchmaking");
+  const [gameMode, setGameMode] = useState<"solo" | "matchmaking" | "ai">("matchmaking");
+  const [aiDifficulty, setAiDifficulty] = useState<"easy" | "medium" | "hard" | "impossible">("medium");
 
   // This old function has been replaced by connectWebSocketWithMode
 
@@ -92,20 +93,36 @@ export default function Home() {
     connectWebSocketWithMode('matchmaking');
   };
 
+  const handleStartAI = () => {
+    connectWebSocketWithMode('ai', aiDifficulty);
+  };
+
   // Connect with specific game mode
-  const connectWebSocketWithMode = (gameMode: string) => {
+  const connectWebSocketWithMode = (gameMode: string, aiDifficultyParam?: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       return; // Already connected
     }
 
-    const ws = new WebSocket("ws://localhost:3001/ws");
+    // Dynamic WebSocket URL with fallback
+    let wsUrl = `ws://${window.location.hostname}:3001/ws`;
+    
+    // If accessing from host OS and VM IP is known, you can hardcode it
+    // Replace 'YOUR_VM_IP' with your actual VM IP if needed
+    // wsUrl = 'ws://10.0.2.15:3001/ws'; // Uncomment and set your VM IP
+    
+    console.log(`Connecting to WebSocket: ${wsUrl}`);
+    const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
       console.log("WebSocket connected");
       setIsConnected(true);
       // Send game mode selection
-      ws.send(JSON.stringify({ type: "join", gameMode }));
+      const joinMessage: any = { type: "join", gameMode };
+      if (gameMode === 'ai' && aiDifficultyParam) {
+        joinMessage.aiDifficulty = aiDifficultyParam;
+      }
+      ws.send(JSON.stringify(joinMessage));
     };
 
     ws.onclose = () => {
@@ -172,10 +189,8 @@ export default function Home() {
       let player1DY = 0;
       let player2DY = 0;
       
-      // Calculate movement based on keys pressed
+      // Calculate movement - both control schemes work for any player
       let myMovement = 0;
-      
-      // Both control schemes work for any player
       if (keysPressed.has("w") || keysPressed.has("W") || keysPressed.has("ArrowUp")) {
         myMovement -= 5;
       }
@@ -185,9 +200,9 @@ export default function Home() {
       
       // Send movement based on player role
       if (playerInfo?.role === 'player1') {
-        player1DY = myMovement; // Player 1 controls left paddle
+        player1DY = myMovement; // Player 1 can use either WASD or Arrows
       } else if (playerInfo?.role === 'player2') {
-        player2DY = myMovement; // Player 2 controls right paddle
+        player2DY = myMovement; // Player 2 can use either WASD or Arrows
       } else if (playerInfo?.role === 'both') {
         // Coop mode: Local multiplayer with specific key assignments
         if (keysPressed.has("w") || keysPressed.has("W")) player1DY -= 5; // Left paddle: WASD
@@ -196,9 +211,9 @@ export default function Home() {
         if (keysPressed.has("ArrowDown")) player2DY += 5;
       }
       
-      // Debug Player 2 specifically
-      if (playerInfo?.role === 'player2' && (player1DY !== 0 || player2DY !== 0)) {
-        console.log(`🎮 Frontend Player 2 sending: role=${playerInfo?.role}, p1DY=${player1DY}, p2DY=${player2DY}, myMovement=${myMovement}, keys=[${Array.from(keysPressed)}]`);
+      // Debug all player movements
+      if ((player1DY !== 0 || player2DY !== 0)) {
+        console.log(`🎮 Frontend sending: role=${playerInfo?.role}, p1DY=${player1DY}, p2DY=${player2DY}, keys=[${Array.from(keysPressed)}]`);
       }
       
       wsRef.current.send(JSON.stringify({ type: "update", player1DY, player2DY }));
@@ -277,6 +292,28 @@ export default function Home() {
               </div>
               <div style={{ textAlign: "center" }}>
                 <button
+                  onClick={() => setGameMode("ai")}
+                  style={{
+                    padding: "10px 15px",
+                    fontSize: "14px",
+                    backgroundColor: gameMode === "ai" ? "#28a745" : "#6c757d",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "5px",
+                    cursor: "pointer",
+                    display: "block",
+                    marginBottom: "5px"
+                  }}
+                >
+                  🤖 vs AI
+                </button>
+                <small style={{ color: "#ccc", fontSize: "12px" }}>
+                  Play against computer<br/>
+                  (Choose difficulty below)
+                </small>
+              </div>
+              <div style={{ textAlign: "center" }}>
+                <button
                   onClick={() => setGameMode("solo")}
                   style={{
                     padding: "10px 15px",
@@ -300,8 +337,41 @@ export default function Home() {
             </div>
           </div>
 
+          {/* AI Difficulty Selection */}
+          {gameMode === "ai" && (
+            <div style={{ marginBottom: "20px" }}>
+              <h4>AI Difficulty:</h4>
+              <div style={{ display: "flex", gap: "10px", justifyContent: "center", flexWrap: "wrap" }}>
+                {["easy", "medium", "hard", "impossible"].map((difficulty) => (
+                  <button
+                    key={difficulty}
+                    onClick={() => setAiDifficulty(difficulty)}
+                    style={{
+                      padding: "8px 12px",
+                      fontSize: "12px",
+                      backgroundColor: aiDifficulty === difficulty ? "#007bff" : "#6c757d",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "3px",
+                      cursor: "pointer",
+                      textTransform: "capitalize"
+                    }}
+                  >
+                    {difficulty === "impossible" ? "🔥 Impossible" : 
+                     difficulty === "hard" ? "💪 Hard" :
+                     difficulty === "medium" ? "⚖️ Medium" : "😊 Easy"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <button 
-            onClick={gameMode === "matchmaking" ? handleStartMultiplayer : handleStartSolo}
+            onClick={() => {
+              if (gameMode === "matchmaking") handleStartMultiplayer();
+              else if (gameMode === "ai") handleStartAI();
+              else handleStartSolo();
+            }}
             style={{
               padding: "15px 30px",
               fontSize: "18px",
@@ -312,7 +382,9 @@ export default function Home() {
               cursor: "pointer"
             }}
           >
-            {gameMode === "matchmaking" ? "🎮 Find Opponent" : "👥 Start Coop"}
+            {gameMode === "matchmaking" ? "🎮 Find Opponent" : 
+             gameMode === "ai" ? `🤖 Fight ${aiDifficulty.toUpperCase()} AI` : 
+             "👥 Start Coop"}
           </button>
         </div>
       )}
